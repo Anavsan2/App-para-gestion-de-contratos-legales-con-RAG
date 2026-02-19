@@ -4,19 +4,18 @@ import tempfile
 import requests
 import msal
 
-# --- IMPORTACIONES MODERNAS DE LANGCHAIN ---
+# --- IMPORTACIONES MODERNAS Y GRATUITAS ---
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
 
 # --- 1. SISTEMA DE CONTRASEÑA ---
 def check_password():
-    """Devuelve True si el usuario ingresó la contraseña correcta."""
     def password_entered():
         if st.session_state["password"] == st.secrets["APP_PASSWORD"]:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Borra la contraseña por seguridad
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
@@ -35,102 +34,80 @@ if not check_password():
     st.stop()
 
 # --- 2. CONFIGURACIÓN DESDE STREAMLIT SECRETS ---
-os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = st.secrets["HUGGINGFACE_API_TOKEN"]
 
 # --- 3. FUNCIONES BACKEND ---
-def get_graph_token():
-    """Simula o gestiona la conexión con Azure AD / SharePoint"""
-    app = msal.ConfidentialClientApplication(
-        st.secrets["CLIENT_ID"],
-        authority=f"https://login.microsoftonline.com/{st.secrets['TENANT_ID']}",
-        client_credential=st.secrets["CLIENT_SECRET"],
-    )
-    result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
-    return result.get("access_token")
-
 def upload_to_sharepoint(file_path, filename):
-    """Simula la subida del archivo a SharePoint"""
     st.info("Subiendo a SharePoint...")
-    # Aquí irá tu lógica real de requests a Graph API
     st.success(f"✅ Documento '{filename}' guardado en SharePoint exitosamente.")
     return "ID_SIMULADO_123"
 
 def analyze_and_index(file_path):
-    """Lee el PDF y lo guarda en la base de datos vectorial (FAISS)"""
     loader = PyPDFLoader(file_path)
     documents = loader.load()
     
-    # Cortar el texto en trozos pequeños
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     texts = text_splitter.split_documents(documents)
     
-    # Convertir a vectores usando FAISS
-    embeddings = OpenAIEmbeddings()
+    # Usamos un modelo de embeddings GRATUITO y muy rápido de Hugging Face
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_db = FAISS.from_documents(documents=texts, embedding=embeddings)
     return vector_db
 
 # --- 4. INTERFAZ GRÁFICA (FRONTEND) ---
-st.title("📄 Analizador de Contratos Inteligente")
+st.title("📄 Analizador de Contratos Inteligente (Versión Gratuita)")
 st.markdown("Sube un contrato para guardarlo en SharePoint y hazle preguntas al instante.")
 
-# Inicializar memoria de sesión
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "vector_db" not in st.session_state:
     st.session_state.vector_db = None
 
-# Barra lateral
 with st.sidebar:
     st.header("1. Subir Contrato")
     uploaded_file = st.file_uploader("Elige un archivo PDF", type="pdf")
     
     if uploaded_file is not None and st.button("Procesar y Guardar"):
-        with st.spinner("Leyendo documento e indexando..."):
+        with st.spinner("Leyendo documento e indexando... (Puede tardar 1 min la primera vez)"):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_file_path = tmp_file.name
             
-            # Indexar en IA
             st.session_state.vector_db = analyze_and_index(tmp_file_path)
-            
-            # Guardar en SharePoint
             upload_to_sharepoint(tmp_file_path, uploaded_file.name)
             
             st.success("¡Listo! Ya puedes hacerle preguntas al contrato.")
 
-# Chat Principal
 st.header("2. Pregúntale a tu Contrato")
 
-# Mostrar historial de mensajes
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Nueva pregunta del usuario
 if prompt := st.chat_input("Ej: ¿Cuáles son las condiciones de pago?"):
     if st.session_state.vector_db is None:
         st.warning("⚠️ Primero debes subir y procesar un contrato en la barra lateral.")
     else:
-        # Mostrar pregunta
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Generar respuesta de la IA (Enfoque manual RAG sin 'chains')
         with st.chat_message("assistant"):
             with st.spinner("Analizando cláusulas..."):
                 
-                # 1. Buscar los fragmentos más relevantes en el contrato
                 docs_relevantes = st.session_state.vector_db.similarity_search(prompt, k=4)
                 contexto = "\n\n".join([doc.page_content for doc in docs_relevantes])
                 
-                # 2. Configurar el modelo de OpenAI
-                llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
+                # Usamos el modelo gratuito Mistral en lugar de OpenAI
+                llm = HuggingFaceEndpoint(
+                    repo_id="mistralai/Mistral-7B-Instruct-v0.3",
+                    temperature=0.1,
+                    max_new_tokens=512
+                )
                 
-                # 3. Crear el Prompt estricto
                 instruccion = f"""
-                Eres un asistente legal experto. Usa ÚNICAMENTE la siguiente información extraída del contrato para responder a la pregunta del usuario.
-                Si la respuesta no está en este contexto, di claramente "No he encontrado esta información en el contrato subido".
+                Eres un asistente legal experto. Usa ÚNICAMENTE la siguiente información extraída del contrato para responder a la pregunta del usuario. Responde en español.
+                Si la respuesta no está en este contexto, di "No he encontrado esta información en el contrato subido".
                 
                 CONTEXTO DEL CONTRATO:
                 {contexto}
@@ -139,9 +116,7 @@ if prompt := st.chat_input("Ej: ¿Cuáles son las condiciones de pago?"):
                 {prompt}
                 """
                 
-                # 4. Obtener y mostrar la respuesta
-                respuesta = llm.invoke(instruccion).content
+                respuesta = llm.invoke(instruccion)
                 st.markdown(respuesta)
                 
-        # Guardar respuesta en el historial
         st.session_state.messages.append({"role": "assistant", "content": respuesta})
