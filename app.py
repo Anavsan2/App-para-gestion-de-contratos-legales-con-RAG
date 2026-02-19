@@ -6,7 +6,7 @@ import msal
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 
 # --- 1. SISTEMA DE CONTRASEÑA ---
@@ -64,8 +64,8 @@ def analyze_and_index(file_path):
     texts = text_splitter.split_documents(documents)
     
     embeddings = OpenAIEmbeddings()
-    # Usamos Chroma en memoria para el MVP rápido
-    vector_db = Chroma.from_documents(documents=texts, embedding=embeddings)
+    # Usamos FAISS en lugar de Chroma. Es mucho más estable y rápido en Streamlit Cloud.
+    vector_db = FAISS.from_documents(documents=texts, embedding=embeddings)
     return vector_db
 
 # --- 4. INTERFAZ GRÁFICA (FRONTEND) ---
