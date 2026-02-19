@@ -1,11 +1,10 @@
 streamlit
-openai
 langchain
 langchain-community
 langchain-core
 langchain-text-splitters
-langchain-openai
-tiktoken
+langchain-huggingface
+sentence-transformers
 faiss-cpu
 pypdf
 msal
