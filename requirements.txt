@@ -5,9 +5,8 @@ langchain-community
 langchain-core
 langchain-text-splitters
 langchain-openai
-langchain-chroma
 tiktoken
-chromadb
+faiss-cpu
 pypdf
 msal
 requests
