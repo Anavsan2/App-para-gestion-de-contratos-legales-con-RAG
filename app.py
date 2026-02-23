@@ -4,11 +4,12 @@ import tempfile
 import requests
 import msal
 
-# --- IMPORTACIONES MODERNAS Y GRATUITAS ---
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
+
+# Nuevas importaciones para usar la API remota (súper ligero)
+from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEndpointEmbeddings
 
 # --- 1. SISTEMA DE CONTRASEÑA ---
 def check_password():
@@ -34,7 +35,8 @@ if not check_password():
     st.stop()
 
 # --- 2. CONFIGURACIÓN DESDE STREAMLIT SECRETS ---
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = st.secrets["HUGGINGFACE_API_TOKEN"]
+HF_TOKEN = st.secrets["HUGGINGFACE_API_TOKEN"]
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
 
 # --- 3. FUNCIONES BACKEND ---
 def upload_to_sharepoint(file_path, filename):
@@ -49,13 +51,18 @@ def analyze_and_index(file_path):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     texts = text_splitter.split_documents(documents)
     
-    # Usamos un modelo de embeddings GRATUITO y muy rápido de Hugging Face
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    # Usamos la API remota para los embeddings (No colapsa la memoria)
+    embeddings = HuggingFaceEndpointEmbeddings(
+        model="sentence-transformers/all-MiniLM-L6-v2",
+        task="feature-extraction",
+        huggingfacehub_api_token=HF_TOKEN
+    )
+    
     vector_db = FAISS.from_documents(documents=texts, embedding=embeddings)
     return vector_db
 
 # --- 4. INTERFAZ GRÁFICA (FRONTEND) ---
-st.title("📄 Analizador de Contratos Inteligente (Versión Gratuita)")
+st.title("📄 Analizador de Contratos Inteligente (Nube Ligera)")
 st.markdown("Sube un contrato para guardarlo en SharePoint y hazle preguntas al instante.")
 
 if "messages" not in st.session_state:
@@ -68,7 +75,7 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Elige un archivo PDF", type="pdf")
     
     if uploaded_file is not None and st.button("Procesar y Guardar"):
-        with st.spinner("Leyendo documento e indexando... (Puede tardar 1 min la primera vez)"):
+        with st.spinner("Conectando con la IA en la nube e indexando..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_file_path = tmp_file.name
@@ -93,16 +100,17 @@ if prompt := st.chat_input("Ej: ¿Cuáles son las condiciones de pago?"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Analizando cláusulas..."):
+            with st.spinner("Analizando cláusulas con Mistral..."):
                 
                 docs_relevantes = st.session_state.vector_db.similarity_search(prompt, k=4)
                 contexto = "\n\n".join([doc.page_content for doc in docs_relevantes])
                 
-                # Usamos el modelo gratuito Mistral en lugar de OpenAI
+                # Usamos el modelo gratuito Mistral vía API remota
                 llm = HuggingFaceEndpoint(
                     repo_id="mistralai/Mistral-7B-Instruct-v0.3",
                     temperature=0.1,
-                    max_new_tokens=512
+                    max_new_tokens=512,
+                    huggingfacehub_api_token=HF_TOKEN
                 )
                 
                 instruccion = f"""
