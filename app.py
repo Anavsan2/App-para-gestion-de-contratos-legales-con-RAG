@@ -132,7 +132,7 @@ if prompt := st.chat_input("Ej: ¿Cuáles son las obligaciones del cliente?"):
                     # Conexión súper rápida y nativa a Groq
                     llm = ChatGroq(
                         api_key=GROQ_API_KEY,
-                        model_name="llama3-8b-8192", # Modelo brutalmente rápido y bueno en razonamiento
+                        model_name="llama-3.1-8b-instant", # Modelo brutalmente rápido y bueno en razonamiento
                         temperature=0.1
                     )
                     
