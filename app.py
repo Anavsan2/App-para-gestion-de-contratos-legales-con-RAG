@@ -4,11 +4,11 @@ import tempfile
 import requests
 import msal
 
-from langchain_community.document_loaders import PyPDFLoader
+# Importamos los dos lectores: uno para PDF y otro para Word
+from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 
-# Nuevas importaciones para usar la API remota (súper ligero)
 from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEndpointEmbeddings
 
 # --- 1. SISTEMA DE CONTRASEÑA ---
@@ -45,13 +45,19 @@ def upload_to_sharepoint(file_path, filename):
     return "ID_SIMULADO_123"
 
 def analyze_and_index(file_path):
-    loader = PyPDFLoader(file_path)
+    # Detectamos la extensión para usar el lector correcto
+    if file_path.lower().endswith('.pdf'):
+        loader = PyPDFLoader(file_path)
+    elif file_path.lower().endswith('.docx'):
+        loader = Docx2txtLoader(file_path)
+    else:
+        raise ValueError("Formato de archivo no soportado.")
+        
     documents = loader.load()
     
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     texts = text_splitter.split_documents(documents)
     
-    # Usamos la API remota para los embeddings (No colapsa la memoria)
     embeddings = HuggingFaceEndpointEmbeddings(
         model="sentence-transformers/all-MiniLM-L6-v2",
         task="feature-extraction",
@@ -62,7 +68,7 @@ def analyze_and_index(file_path):
     return vector_db
 
 # --- 4. INTERFAZ GRÁFICA (FRONTEND) ---
-st.title("📄 Analizador de Contratos Inteligente (Nube Ligera)")
+st.title("📄 Analizador de Contratos (Soporta PDF y Word)")
 st.markdown("Sube un contrato para guardarlo en SharePoint y hazle preguntas al instante.")
 
 if "messages" not in st.session_state:
@@ -72,11 +78,17 @@ if "vector_db" not in st.session_state:
 
 with st.sidebar:
     st.header("1. Subir Contrato")
-    uploaded_file = st.file_uploader("Elige un archivo PDF", type="pdf")
+    # Ahora aceptamos tanto PDF como DOCX
+    uploaded_file = st.file_uploader("Elige un archivo PDF o Word (.docx)", type=["pdf", "docx"])
     
     if uploaded_file is not None and st.button("Procesar y Guardar"):
         with st.spinner("Conectando con la IA en la nube e indexando..."):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            
+            # Obtenemos la extensión real del archivo subido (.pdf o .docx)
+            file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+            
+            # Guardamos el archivo temporal con su extensión correcta
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_file_path = tmp_file.name
             
@@ -105,7 +117,6 @@ if prompt := st.chat_input("Ej: ¿Cuáles son las condiciones de pago?"):
                 docs_relevantes = st.session_state.vector_db.similarity_search(prompt, k=4)
                 contexto = "\n\n".join([doc.page_content for doc in docs_relevantes])
                 
-                # Usamos el modelo gratuito Mistral vía API remota
                 llm = HuggingFaceEndpoint(
                     repo_id="mistralai/Mistral-7B-Instruct-v0.3",
                     temperature=0.1,
