@@ -9,9 +9,9 @@ from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 
-# Importamos FastEmbed para lectura local (rápido y sin errores de API)
+# Lectura local ultraligera
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
-# Importamos HuggingFace solo para el Chat (Mistral)
+# Modelo de chat en la nube
 from langchain_huggingface import HuggingFaceEndpoint
 
 # --- 1. SISTEMA DE CONTRASEÑA ---
@@ -44,11 +44,12 @@ os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
 # --- 3. FUNCIONES BACKEND ---
 def upload_to_sharepoint(file_path, filename):
     st.info("Subiendo a SharePoint...")
+    # Aquí irá la lógica real de Microsoft Graph API más adelante
     st.success(f"✅ Documento '{filename}' guardado en SharePoint exitosamente.")
     return "ID_SIMULADO_123"
 
 def analyze_and_index(file_path):
-    # Detectar extensión
+    # Detectar extensión para PDF o Word
     if file_path.lower().endswith('.pdf'):
         loader = PyPDFLoader(file_path)
     elif file_path.lower().endswith('.docx'):
@@ -59,20 +60,18 @@ def analyze_and_index(file_path):
         
     documents = loader.load()
     
-    # Cortar texto
+    # Cortar texto en fragmentos
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     texts = text_splitter.split_documents(documents)
     
-    # --- CAMBIO CLAVE: Usamos FastEmbed (Local) ---
-    # Esto descarga un modelo pequeño al servidor y procesa ahí mismo.
-    # No falla por límites de API y es muy rápido.
+    # Lectura local con FastEmbed (Evita errores 413 o de límite de Hugging Face)
     embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
     
     vector_db = FAISS.from_documents(documents=texts, embedding=embeddings)
     return vector_db
 
 # --- 4. INTERFAZ GRÁFICA ---
-st.title("📄 Analizador de Contratos (Modo Híbrido)")
+st.title("📄 Analizador de Contratos (IA Híbrida)")
 st.markdown("Sube un contrato (PDF/Word) para guardarlo y consultarlo.")
 
 if "messages" not in st.session_state:
@@ -85,7 +84,7 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Archivo", type=["pdf", "docx"])
     
     if uploaded_file is not None and st.button("Procesar y Guardar"):
-        with st.spinner("Procesando documento localmente..."):
+        with st.spinner("Procesando documento localmente (puede tardar un minuto la primera vez)..."):
             file_extension = os.path.splitext(uploaded_file.name)[1].lower()
             with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
@@ -98,28 +97,29 @@ with st.sidebar:
 
 st.header("2. Pregúntale a tu Contrato")
 
+# Mostrar historial de chat
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Ej: ¿Cuáles son las condiciones de pago?"):
+if prompt := st.chat_input("Ej: ¿Cuáles son las obligaciones del cliente?"):
     if st.session_state.vector_db is None:
-        st.warning("⚠️ Primero debes subir un contrato.")
+        st.warning("⚠️ Primero debes subir un contrato en el panel izquierdo.")
     else:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Consultando a Mistral AI..."):
+            with st.spinner("Consultando a Zephyr AI..."):
                 
-                # Búsqueda local (Rápida y gratis)
+                # Búsqueda de cláusulas relevantes
                 docs_relevantes = st.session_state.vector_db.similarity_search(prompt, k=4)
                 contexto = "\n\n".join([doc.page_content for doc in docs_relevantes])
                 
-                # Generación remota (Vía API de Hugging Face)
+                # Generación remota con el modelo compatible de Hugging Face
                 llm = HuggingFaceEndpoint(
-                    repo_id="mistralai/Mistral-7B-Instruct-v0.3",
+                    repo_id="HuggingFaceH4/zephyr-7b-beta",
                     temperature=0.1,
                     max_new_tokens=512,
                     huggingfacehub_api_token=HF_TOKEN
@@ -127,7 +127,7 @@ if prompt := st.chat_input("Ej: ¿Cuáles son las condiciones de pago?"):
                 
                 instruccion = f"""
                 Actúa como un abogado experto. Responde a la pregunta basándote SOLO en el siguiente contexto del contrato.
-                Si la respuesta no está en el texto, di "No se menciona en el documento". Responde en español.
+                Si la respuesta no está en el texto, di claramente "No se menciona en el documento". Responde en español.
                 
                 CONTEXTO:
                 {contexto}
@@ -141,4 +141,4 @@ if prompt := st.chat_input("Ej: ¿Cuáles son las condiciones de pago?"):
                     st.markdown(respuesta)
                     st.session_state.messages.append({"role": "assistant", "content": respuesta})
                 except Exception as e:
-                    st.error(f"Error conectando con Mistral: {e}")
+                    st.error(f"Error conectando con la IA: {e}")
