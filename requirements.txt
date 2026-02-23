@@ -5,6 +5,7 @@ langchain-core
 langchain-text-splitters
 langchain-huggingface
 huggingface-hub
+fastembed
 faiss-cpu
 pypdf
 docx2txt
