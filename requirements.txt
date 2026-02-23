@@ -7,5 +7,6 @@ langchain-huggingface
 huggingface-hub
 faiss-cpu
 pypdf
+docx2txt
 msal
 requests
