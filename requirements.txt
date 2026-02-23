@@ -4,7 +4,7 @@ langchain-community
 langchain-core
 langchain-text-splitters
 langchain-huggingface
-sentence-transformers
+huggingface-hub
 faiss-cpu
 pypdf
 msal
