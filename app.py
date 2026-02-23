@@ -11,8 +11,9 @@ from langchain_community.vectorstores import FAISS
 
 # Lectura local ultraligera
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
-# Modelo de chat en la nube
-from langchain_huggingface import HuggingFaceEndpoint
+
+# El motor conversacional ultrarrápido de Groq
+from langchain_groq import ChatGroq
 
 # --- 1. SISTEMA DE CONTRASEÑA ---
 def check_password():
@@ -38,8 +39,7 @@ if not check_password():
     st.stop()
 
 # --- 2. CONFIGURACIÓN ---
-HF_TOKEN = st.secrets["HUGGINGFACE_API_TOKEN"]
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
 # --- 3. FUNCIONES BACKEND ---
 def upload_to_sharepoint(file_path, filename):
@@ -64,15 +64,15 @@ def analyze_and_index(file_path):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     texts = text_splitter.split_documents(documents)
     
-    # Lectura local con FastEmbed (Evita errores 413 o de límite de Hugging Face)
+    # Lectura local con FastEmbed (Estable y sin límites de red)
     embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
     
     vector_db = FAISS.from_documents(documents=texts, embedding=embeddings)
     return vector_db
 
 # --- 4. INTERFAZ GRÁFICA ---
-st.title("📄 Analizador de Contratos (IA Híbrida)")
-st.markdown("Sube un contrato (PDF/Word) para guardarlo y consultarlo.")
+st.title("📄 Analizador de Contratos (Motor Groq)")
+st.markdown("Sube un contrato (PDF/Word) para guardarlo y consultarlo a la velocidad de la luz.")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -84,7 +84,7 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Archivo", type=["pdf", "docx"])
     
     if uploaded_file is not None and st.button("Procesar y Guardar"):
-        with st.spinner("Procesando documento localmente (puede tardar un minuto la primera vez)..."):
+        with st.spinner("Procesando documento localmente..."):
             file_extension = os.path.splitext(uploaded_file.name)[1].lower()
             with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
@@ -111,19 +111,11 @@ if prompt := st.chat_input("Ej: ¿Cuáles son las obligaciones del cliente?"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Consultando a Zephyr AI..."):
+            with st.spinner("Consultando a Groq AI..."):
                 
                 # Búsqueda de cláusulas relevantes
                 docs_relevantes = st.session_state.vector_db.similarity_search(prompt, k=4)
                 contexto = "\n\n".join([doc.page_content for doc in docs_relevantes])
-                
-                # Generación remota con el modelo compatible de Hugging Face
-                llm = HuggingFaceEndpoint(
-                    repo_id="HuggingFaceH4/zephyr-7b-beta",
-                    temperature=0.1,
-                    max_new_tokens=512,
-                    huggingfacehub_api_token=HF_TOKEN
-                )
                 
                 instruccion = f"""
                 Actúa como un abogado experto. Responde a la pregunta basándote SOLO en el siguiente contexto del contrato.
@@ -137,8 +129,17 @@ if prompt := st.chat_input("Ej: ¿Cuáles son las obligaciones del cliente?"):
                 """
                 
                 try:
-                    respuesta = llm.invoke(instruccion)
+                    # Conexión súper rápida y nativa a Groq
+                    llm = ChatGroq(
+                        api_key=GROQ_API_KEY,
+                        model_name="llama3-8b-8192", # Modelo brutalmente rápido y bueno en razonamiento
+                        temperature=0.1
+                    )
+                    
+                    # Ejecutar y obtener respuesta
+                    respuesta = llm.invoke(instruccion).content
+                    
                     st.markdown(respuesta)
                     st.session_state.messages.append({"role": "assistant", "content": respuesta})
                 except Exception as e:
-                    st.error(f"Error conectando con la IA: {e}")
+                    st.error(f"Error conectando con Groq: {e}")
